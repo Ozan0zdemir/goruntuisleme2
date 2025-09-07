@@ -1,0 +1,1 @@
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; brew install python@3.8; /opt/homebrew/bin/python3.8 -m venv env38; source env38/bin/activate; pip install -r requirements.txt

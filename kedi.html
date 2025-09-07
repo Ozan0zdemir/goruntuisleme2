@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kedi Yüzü Tespiti</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        h1 { color: #2c3e50; }
+        .info-message {
+            margin-top: 10px;
+            font-size: 1.2em;
+            color: #555;
+            text-align: center;
+        }
+        #imageUpload {
+            padding: 10px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            background-color: #fff;
+        }
+        #imageUpload:hover {
+            border-color: #555;
+        }
+        #statusMessage {
+            margin-top: 15px;
+            font-size: 1.1em;
+            color: #e74c3c;
+            min-height: 25px; 
+        }
+        #imageCanvas { 
+            border: 2px solid #ddd; 
+            background-color: #fff;
+            max-width: 90%; 
+            height: auto;
+            margin-top: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <h1>TensorFlow.js ile Kedi Yüzü Tespiti</h1>
+    <p class="info-message">Lütfen kedi fotoğrafını yükleyiniz:</p>
+    <input type="file" id="imageUpload" accept="image/*">
+    <div id="statusMessage"></div>
+    <canvas id="imageCanvas"></canvas>
+    
+    <script>
+        const DOM = {
+            imageUpload: document.getElementById('imageUpload'),
+            imageCanvas: document.getElementById('imageCanvas'),
+            statusMessage: document.getElementById('statusMessage'),
+        };
+        const ctx = DOM.imageCanvas.getContext('2d');
+        let model;
+
+        const constants = {
+            MAX_CANVAS_WIDTH: window.innerWidth * 0.9,
+            BOX_LINE_WIDTH: 2,
+            BOX_COLOR: 'lime',
+            FONT_SIZE: '16px',
+            FONT_FAMILY: 'sans-serif',
+        };
+
+        // Modeli yükleyen fonksiyon
+        async function loadModel() {
+            DOM.statusMessage.textContent = 'Model yükleniyor, lütfen bekleyin...';
+            DOM.statusMessage.style.color = '#3498db';
+            try {
+                model = await cocoSsd.load();
+                DOM.statusMessage.textContent = 'Model hazır. Bir fotoğraf yükleyebilirsiniz.';
+                DOM.statusMessage.style.color = '#27ae60';
+            } catch (error) {
+                DOM.statusMessage.textContent = 'Hata: Model yüklenemedi. Lütfen internet bağlantınızı kontrol edin.';
+                console.error('Model yükleme hatası:', error);
+            }
+        }
+
+        // Görüntüyü işleyen ve yüzleri tespit eden ana fonksiyon
+        async function processImage(file) {
+            DOM.statusMessage.textContent = 'Kedi yüzleri tespit ediliyor...';
+            DOM.statusMessage.style.color = '#e67e22';
+
+            const image = new Image();
+            image.onload = async () => {
+                // Kanvas boyutunu ayarla
+                const scaleFactor = Math.min(constants.MAX_CANVAS_WIDTH / image.width, 1);
+                DOM.imageCanvas.width = image.width * scaleFactor;
+                DOM.imageCanvas.height = image.height * scaleFactor;
+                
+                // Görüntüyü çiz
+                ctx.clearRect(0, 0, DOM.imageCanvas.width, DOM.imageCanvas.height);
+                ctx.drawImage(image, 0, 0, DOM.imageCanvas.width, DOM.imageCanvas.height);
+                
+                // Tahminleri al
+                const predictions = await model.detect(image);
+                
+                // Tahminleri çiz
+                drawPredictions(predictions, scaleFactor);
+            };
+            image.src = URL.createObjectURL(file);
+        }
+
+        // Tahminleri kanvasa çizen fonksiyon
+        function drawPredictions(predictions, scaleFactor) {
+            let catCount = 0;
+            predictions.forEach(prediction => {
+                if (prediction.class === 'cat') {
+                    catCount++;
+                    const [x, y, width, height] = prediction.bbox;
+                    
+                    const scaledX = x * scaleFactor;
+                    const scaledY = y * scaleFactor;
+                    const scaledWidth = width * scaleFactor;
+                    const scaledHeight = height * scaleFactor;
+                    
+                    ctx.strokeStyle = constants.BOX_COLOR;
+                    ctx.lineWidth = constants.BOX_LINE_WIDTH;
+                    ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
+                    
+                    ctx.fillStyle = constants.BOX_COLOR;
+                    ctx.font = `${constants.FONT_SIZE} ${constants.FONT_FAMILY}`;
+                    const label = `Kedi ${catCount} (${(prediction.score * 100).toFixed(1)}%)`;
+                    const textX = scaledX;
+                    const textY = scaledY > 10 ? scaledY - 5 : scaledY + 15;
+                    ctx.fillText(label, textX, textY);
+                }
+            });
+            
+            // Sonuç mesajını güncelle
+            if (catCount > 0) {
+                DOM.statusMessage.textContent = `Toplam ${catCount} kedi bulundu!`;
+                DOM.statusMessage.style.color = '#27ae60';
+            } else {
+                DOM.statusMessage.textContent = 'Bu fotoğrafta kedi bulunamadı.';
+                DOM.statusMessage.style.color = '#e74c3c';
+            }
+        }
+
+        // Olay dinleyicisi
+        DOM.imageUpload.addEventListener('change', (event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+                // Modeli yükleme durumu kontrolü ekleyebiliriz
+                if (!model) {
+                    DOM.statusMessage.textContent = "Model henüz hazır değil, lütfen bekleyin.";
+                    DOM.statusMessage.style.color = '#e74c3c';
+                    return;
+                }
+                processImage(file);
+            }
+        });
+
+        // Başlangıçta modeli yükle
+        loadModel();
+    </script>
+</body>
+</html>

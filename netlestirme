@@ -1,0 +1,107 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import torch
+import torch.nn as nn
+from PIL import Image
+
+from basicsr.archs.rrdbnet_arch import RRDBNet
+from realesrgan import RealESRGANer
+
+def upscale_with_realesrgan(image_path, output_path, model_name, scale=4):
+    """
+    Real-ESRGAN kullanarak bir görüntünün çözünürlüğünü ve kalitesini artırır.
+    """
+    try:
+        # 1. Modeli ve cihazı hazırla
+        model_path = os.path.join('weights', f'{model_name}.pth')
+
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"Hata: Model dosyası bulunamadı: '{model_path}'")
+
+        model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
+
+        # Cihazı otomatik olarak belirle (GPU/CPU)
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+            dtype = torch.float16
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device = torch.device('mps')
+            dtype = torch.float32
+        else:
+            device = torch.device('cpu')
+            dtype = torch.float32
+        
+        print(f"Kullanılan Cihaz: {device}")
+
+        model.load_state_dict(torch.load(model_path, map_location=device)['params_ema'])
+        model.to(device).type(dtype).eval()
+
+        upsampler = RealESRGANer(
+            scale=scale,
+            model_path=model_path,
+            model=model,
+            tile=0,
+            half=(device.type == 'cuda') 
+        )
+        
+        # 2. Görüntü işleme ve yükseltme
+        img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+        if img is None:
+            raise FileNotFoundError(f"Hata: Gorsel bulunamadi veya okunamadi: '{image_path}'")
+
+        # Görüntü formatını düzenle (BGR -> RGB)
+        if len(img.shape) == 3 and img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        else:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        output, _ = upsampler.enhance(img, outscale=scale)
+
+        output = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
+        
+        # 3. Sonucu kaydet ve görselleştir
+        cv2.imwrite(output_path, output)
+        print(f"Goruntu basariyla yukseltildi ve '{output_path}' olarak kaydedildi.")
+
+        show_images(image_path, output_path, scale)
+
+    except FileNotFoundError as fnf_error:
+        print(f"Dosya hatasi: {fnf_error}")
+    except Exception as e:
+        print(f"Genel bir hata olustu: {e}")
+
+def show_images(original_path, output_path, scale):
+    """
+    Orijinal ve yukseltilmis goruntuleri gorsellestirir.
+    """
+    try:
+        original_img_pil = Image.open(original_path).convert("RGB")
+        output_img_pil = Image.open(output_path).convert("RGB")
+
+        plt.figure(figsize=(15, 7))
+        
+        plt.subplot(1, 2, 1)
+        plt.imshow(original_img_pil)
+        plt.title('Orijinal Görüntü')
+        plt.axis('off')
+
+        plt.subplot(1, 2, 2)
+        plt.imshow(output_img_pil)
+        plt.title(f'Real-ESRGAN ile Yükseltilmiş Görüntü ({scale}x)')
+        plt.axis('off')
+
+        plt.tight_layout()
+        plt.show()
+
+    except FileNotFoundError as fnf_error:
+        print(f"Hata: Görüntüleri gösterme sırasında dosya hatası: {fnf_error}")
+
+if __name__ == "__main__":
+    gorsel_adi = "sekil.jpg"  
+    cikti_adi = "yuksek_kalite_realesrgan.png"
+    model_ismi = 'RealESRGAN_x4plus' 
+    buyutme_orani = 4
+
+    upscale_with_realesrgan(gorsel_adi, cikti_adi, model_ismi, buyutme_orani)
