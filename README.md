@@ -28,6 +28,7 @@
 
 - python 3.8.10 
 homebrew ile kurmak isterseniz "brew install python@3.10"
+eğer ki çalışmazsa pip install yazıp import yazan kütüphaneleri indirmelisniz
 
 - requirements.txt dosyasındaki kütüphaneler
 "pip install -r requirements.txt" komutu ile indirebilirsiniz.
